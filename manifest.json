@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.phiendp.alttab",
+  "name": "Alttab",
+  "version": "0.1.0",
+  "author": "Phien Pham",
+  "license": "MIT",
+  "description": "Window switcher: hold Super, tap Tab to cycle live window previews, release to switch",
+  "kinds": ["overlay"],
+  "keepLoaded": true,
+  "entryPoints": {
+    "overlay": "Alttab.qml"
+  }
+}
