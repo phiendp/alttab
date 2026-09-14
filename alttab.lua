@@ -24,3 +24,30 @@ o.bind("SUPER + SHIFT + TAB", "Window switcher: previous window",
 -- ignores it unless it is open.
 o.bind("SUPER + SUPER_L", nil, hl.dsp.global(alttab .. ":commit"), { release = true })
 o.bind("SUPER + SUPER_R", nil, hl.dsp.global(alttab .. ":commit"), { release = true })
+
+-- Arrow keys while the switcher is open. Hyprland binds SUPER+LEFT/RIGHT to
+-- "focus window left/right" and consumes them before the overlay can see
+-- them, so take the keys here and decide per press: the overlay's layer
+-- surface exists only while it is on screen (Omarchy's capture-region binds
+-- key off the same fact), so a lookup by namespace is the open/closed test.
+-- Closed, the default focus-left/right behaviour is kept.
+local function alttab_open()
+  return #hl.get_layers({ namespace = "omarchy-alttab" }) > 0
+end
+
+local function alttab_or(shortcut, fallback)
+  return function()
+    if alttab_open() then
+      hl.dispatch(hl.dsp.global(alttab .. ":" .. shortcut))
+    else
+      hl.dispatch(fallback)
+    end
+  end
+end
+
+hl.unbind("SUPER + LEFT")
+hl.unbind("SUPER + RIGHT")
+o.bind("SUPER + LEFT", "Window switcher: previous window / focus on left window",
+  alttab_or("prev", hl.dsp.focus({ direction = "l" })), { repeating = true })
+o.bind("SUPER + RIGHT", "Window switcher: next window / focus on right window",
+  alttab_or("next", hl.dsp.focus({ direction = "r" })), { repeating = true })

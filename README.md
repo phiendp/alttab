@@ -10,7 +10,7 @@ Features:
 
 - Most-recently-used order, kept up to date from Hyprland events so the first `Tab` is always "the window I was just in"
 - Live thumbnails through the Hyprland toplevel-export protocol (also for windows on other workspaces and monitors)
-- `Shift+Tab` / arrows / `hjkl` to move, `1`–`9` to jump, `Enter` or mouse click to pick, `Esc` to cancel
+- `Shift+Tab` to go back, `Super+Left` / `Super+Right` to move without leaving the Super key, `1`–`9` to jump, `Enter` or mouse click to pick, `Esc` to cancel
 - Appears on the monitor that has focus; follows the active Omarchy theme via the `[menu]` tokens
 - Optional scope: every window, only this monitor, or only this workspace
 - No process spawned per keypress: Hyprland delivers the shortcut to the shell as a Wayland global-shortcut event
@@ -36,6 +36,8 @@ appends one line to `~/.config/hypr/bindings.lua` that loads `alttab.lua`, which
   `SUPER+CTRL+TAB` (former workspace) is untouched
 - binds `SUPER+TAB` and `SUPER+SHIFT+TAB` to the switcher
 - binds the release of `Super` to "switch to the highlighted window"
+- takes over `SUPER+LEFT` / `SUPER+RIGHT`: while the switcher is open they move the cursor, otherwise they
+  keep Omarchy's "focus window left / right" behaviour
 
 Nothing else on the system is modified. Both scripts are idempotent.
 
@@ -104,6 +106,12 @@ Hyprland reaches it with `hl.dsp.global("appid:name")` (`bind = MODS, KEY, globa
 classic syntax). Hyprland sends both press and release for a global bind, and a `release = true`
 bind on `SUPER + SUPER_L` fires when the Super key itself is let go. `hyprctl globalshortcuts` lists
 what the shell has registered. Because the plugin registers its shortcuts, it must be `keepLoaded`.
+
+**Arrow keys while Super is held.** `SUPER+LEFT/RIGHT` are Hyprland binds, so the overlay never sees
+them. `alttab.lua` rebinds them to a Lua function that checks `hl.get_layers({ namespace = "omarchy-alttab" })`:
+the overlay's layer surface exists only while it is on screen, so a non-empty result means "open" and the
+press is forwarded as a global shortcut; otherwise the stock focus dispatcher runs. Omarchy's own
+capture-region binds use the same layer-namespace trick. `hyprctl eval '<lua>'` runs such code by hand.
 
 **Live previews.** `ScreencopyView { captureSource: hyprlandToplevel.wayland; live: true }` from
 `Quickshell.Wayland` renders a window, including ones on other workspaces. `sourceSize` gives the
