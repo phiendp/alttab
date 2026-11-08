@@ -15,7 +15,8 @@ import "AlttabModel.js" as Model
 // Wayland event with no process spawn in between (see alttab.lua):
 //   SUPER + TAB          -> global io.github.phiendp.alttab:next
 //   SUPER + SHIFT + TAB  -> global io.github.phiendp.alttab:prev
-//   SUPER_L released     -> global io.github.phiendp.alttab:commit
+//   Super released       -> global io.github.phiendp.alttab:commit
+//                           (an input.keyboard.key hook in alttab.lua)
 // The overlay also commits itself when it sees the Super key released while
 // it holds keyboard focus; whichever signal arrives first wins.
 //
@@ -39,6 +40,9 @@ Item {
   property int selectedIndex: 0
   property bool cursorActive: true
   property var targetScreen: null
+
+  // The window commit() picked, waiting for the overlay to leave the screen.
+  property var pendingFocus: null
 
   // Most-recently-used window addresses, maintained from Hyprland IPC events
   // so the order is right the instant Tab is pressed (no round trip).
@@ -106,6 +110,7 @@ Item {
     if (isNaN(d) || d === 0) d = 1
     d = d < 0 ? -1 : 1
     if (!root.opened) {
+      if (root.pendingFocus) root.flushPendingFocus()
       var list = root.collect()
       if (list.length === 0) return "no windows"
       root.windows = list
@@ -146,8 +151,23 @@ Item {
     var w = root.windows[root.selectedIndex]
     root.finish()
     if (!w) return "nothing selected"
-    root.focusWindow(w)
+    // Not focused yet: the overlay's layer surface holds exclusive keyboard
+    // focus until Hyprland has unmapped it, a few frames after `opened` goes
+    // false. Hyprland refuses window focus while such a layer is mapped and,
+    // once it unmaps, hands focus back to the window that had it before, so a
+    // focus dispatched right here was lost about half the time. Focus on the
+    // layer's closelayer event instead (see onRawEvent), with a timer in case
+    // the surface never got mapped and no such event comes.
+    root.pendingFocus = w
+    focusFallback.restart()
     return "ok"
+  }
+
+  function flushPendingFocus() {
+    focusFallback.stop()
+    var w = root.pendingFocus
+    root.pendingFocus = null
+    if (w) root.focusWindow(w)
   }
 
   // Hyprland with a Lua config parses dispatch requests as Lua, so the plain
@@ -291,7 +311,7 @@ Item {
   //   omarchy-shell shell call io.github.phiendp.alttab snapshot /tmp/alttab.png
   function debug() {
     return JSON.stringify({
-      rev: 4,
+      rev: 5,
       opened: root.opened,
       selectedIndex: root.selectedIndex,
       scope: root.scope,
@@ -321,6 +341,7 @@ Item {
       var name = event.name
       if (name === "activewindowv2") root.mru = Model.bump(root.mru, event.data)
       else if (name === "closewindow") root.removeWindow(event.data)
+      else if (name === "closelayer" && event.data === "omarchy-alttab") root.flushPendingFocus()
     }
   }
 
@@ -344,6 +365,12 @@ Item {
       pairs.sort(function(x, y) { return x.h - y.h })
       root.mru = pairs.map(function(p) { return p.a })
     }
+  }
+
+  Timer {
+    id: focusFallback
+    interval: 150
+    onTriggered: root.flushPendingFocus()
   }
 
   GlobalShortcut {

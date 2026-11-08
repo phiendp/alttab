@@ -35,7 +35,8 @@ appends one line to `~/.config/hypr/bindings.lua` that loads `alttab.lua`, which
 - unbinds Omarchy's `SUPER+TAB` / `SUPER+SHIFT+TAB` (next / previous workspace);
   `SUPER+CTRL+TAB` (former workspace) is untouched
 - binds `SUPER+TAB` and `SUPER+SHIFT+TAB` to the switcher
-- binds the release of `Super` to "switch to the highlighted window"
+- watches the `Super` key (Hyprland's `input.keyboard.key` event): letting go of it after
+  `SUPER+TAB` means "switch to the highlighted window"
 - takes over `SUPER+LEFT` / `SUPER+RIGHT`: while the switcher is open they move the cursor, otherwise they
   keep Omarchy's "focus window left / right" behaviour
 
@@ -75,8 +76,10 @@ SUPER+TAB ──► Hyprland bind ──► global dispatcher ──► omarchy-
             overlay opens on the focused monitor, cursor on the 2nd most recent window
             each Tab moves the cursor; previews are ScreencopyView items on the windows' toplevels
                               │
-   Super released ──► bindr SUPER_L ──► global "commit" ─┐
-   (or the overlay sees the Meta key-up itself) ─────────┴──► hl.dsp.focus({ window = "address:0x…" })
+   Super released ──► input.keyboard.key hook ──► global "commit" ─┐
+   (or the overlay sees the Meta key-up itself) ───────────────────┴──► overlay hides
+                                                                          │
+                       closelayer omarchy-alttab ──► hl.dsp.focus({ window = "address:0x…" })
 ```
 
 The order comes from a most-recently-used list the overlay maintains from Hyprland's
@@ -106,6 +109,23 @@ Hyprland reaches it with `hl.dsp.global("appid:name")` (`bind = MODS, KEY, globa
 classic syntax). Hyprland sends both press and release for a global bind, and a `release = true`
 bind on `SUPER + SUPER_L` fires when the Super key itself is let go. `hyprctl globalshortcuts` lists
 what the shell has registered. Because the plugin registers its shortcuts, it must be `keepLoaded`.
+
+**Committing on Super release.** A release bind (`SUPER + SUPER_L`, `release = true`) looks
+like the obvious way to catch "Super let go", but Hyprland never fires it after another bind
+(`SUPER+TAB`) was used during the same hold, so it never committed in practice. The overlay's own
+`Keys.onReleased` only sees the release once its layer surface has keyboard focus, ~50–70ms after
+Tab, so a quick flick left the overlay open until the next `SUPER+TAB`, which then switched one
+window too far. `alttab.lua` instead subscribes to `hl.on("input.keyboard.key", fn(keycode, time, state))`,
+which sees every key compositor-side whatever has focus, and fires `commit` on the first Super
+release after a `SUPER+TAB`.
+
+**Focus after the overlay is gone, not before.** The overlay's layer surface takes
+`WlrKeyboardFocus.Exclusive`. While such a layer is mapped Hyprland refuses window focus, and when
+it unmaps Hyprland returns focus to the window that had it before. Dispatching the focus in the
+same tick that hides the overlay raced the unmap (~25ms later) and lost about half the time. The
+overlay now keeps the chosen window pending and focuses it on Hyprland's
+`closelayer>>omarchy-alttab` event, with a 150ms fallback timer for the case where the surface was
+never mapped.
 
 **Arrow keys while Super is held.** `SUPER+LEFT/RIGHT` are Hyprland binds, so the overlay never sees
 them. `alttab.lua` rebinds them to a Lua function that checks `hl.get_layers({ namespace = "omarchy-alttab" })`:
